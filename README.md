@@ -1,116 +1,82 @@
-#!/bin/bash
-BASE_DIR="/home"
-crear_base_dir() {
-    if [ ! -d "$BASE_DIR" ]; then
-        sudo mkdir -p "$BASE_DIR"         # Crea el directorio base si no existe.
-        sudo chmod 755 "$BASE_DIR"        # Asigna permisos para lectura/ejecución global y escritura solo para el propietario.
-    fi
-}
+ Auto Provisionador de Usuarios Web (Bash + Nginx + MariaDB)
 
-generar_usuario() {
-    local last_num
-    last_num=$(ls "$BASE_DIR" | grep -oP 'usuario\K\d+' | sort -n | tail -n 1)
+Este proyecto es un script en Bash que automatiza la creación de entornos web individuales por usuario en un servidor Linux.
+Está pensado para escenarios como hosting local, prácticas académicas o entornos de laboratorio.
 
-    if [ -z "$last_num" ]; then
-        USER_NUM=1                       # Si no hay usuarios, empieza desde 1.
-    else
-        USER_NUM=$((last_num + 1))      # Si hay, incrementa en 1.
-    fi
+Con un solo script puedes generar:
 
-    USER_NAME=$(printf "usuario%02d" "$USER_NUM")   # Genera nombre tipo usuario01, usuario02...
-    USER_DIR="${BASE_DIR}/${USER_NAME}"             # Ruta completa del usuario.
-    PUBLIC_HTML="${USER_DIR}/public_html"           # Directorio web del usuario.
-    DOMAIN="${USER_NAME}.com"                       # Dominio ficticio para el usuario.
-}
+Usuario del sistema
+Directorio web (public_html)
+Sitio web inicial (HTML + PHP)
+Base de datos en MariaDB
+Configuración de Nginx con subdominio
+Credenciales listas para uso
+⚙️ Características
 
-generar_contrasena() {
-    PASS=$(openssl rand -base64 12)   # Genera una contraseña aleatoria segura de 12 caracteres en base64.
-}
+- Generación automática de usuarios (usuario01, usuario02, ...)
+- Contraseñas seguras generadas con OpenSSL
+- Virtual Hosts en Nginx por usuario
+- Soporte PHP (php-fpm)
+- Base de datos independiente por usuario
+- Estructura web lista (public_html)
+- Página inicial con diseño personalizado (incluye pingüino 😎)
+- Restricción de acceso SSH (enjaulado básico)
 
-crear_usuario_sistema() {
-    sudo useradd -d "$USER_DIR" -s /bin/bash "$USER_NAME"       # Crea el usuario con su carpeta personal y bash como shell.
-    echo "${USER_NAME}:${PASS}" | sudo chpasswd                 # Establece la contraseña generada.
-    sudo mkdir -p "$PUBLIC_HTML"                                # Crea el directorio `public_html`.
-    # Configurar permisos y ownership para FTP 
-   sudo chown -R "${FTP_USER}:${FTP_USER}" "$WEB_ROOT"
-   sudo chmod 755 "$WEB_ROOT"
-   sudo chmod 755 "$PUBLIC_HTML"
-   
-}
+🧱 Estructura generada
 
-    # Crear info.php
-    echo "<?php phpinfo(); ?>" | sudo tee "${PUBLIC_HTML}/info.php" > /dev/null
+Cada usuario tendrá:
 
-    # credenciales.html con plantilla de credenciales
-    sudo tee "${PUBLIC_HTML}/credenciales.html" > /dev/null <<EOF
-    ...
-EOF
+/home/usuarioXX/
+├── public_html/
+│   ├── index.html
+│   ├── credenciales.html
+│   └── info.php
+🚀 Requisitos
 
-ajustar_permisos_y_enjaular() {
-  sudo chown -R "$USER_NAME:$USER_NAME" "$USER_DIR"     # Asigna propiedad del directorio al usuario.
-  sudo chmod -R 755 "$USER_DIR"                         # Permisos: lectura/ejecución general, escritura para el dueño.
+Antes de ejecutar el script, asegúrate de tener instalado:
 
-  sudo useradd -d "$USER_DIR" -s /usr/sbin/nologin "$USER_NAME"
+Linux (Ubuntu/Debian recomendado)
+nginx
+mariadb-server
+php + php-fpm
+openssl
 
-  if ! grep -q "^DenyUsers.*\b$USER_NAME\b" /etc/ssh/sshd_config; then
-    echo "DenyUsers $USER_NAME" | sudo tee -a /etc/ssh/sshd_config > /dev/null
-    sudo systemctl restart ssh 
-    #Prohíbe el acceso SSH al usuario agregándolo a la directiva DenyUsers en la configuración SSH y reinicia el servicio para aplicar los cambios.
-  fi 
-  crear_bd_y_usuario_mariadb() {
-  sudo mariadb -e "CREATE DATABASE ${USER_NAME};"
-  sudo mariadb -e "CREATE USER '${USER_NAME}'@'localhost' IDENTIFIED BY '${PASS}';"
-  
-  #Se le conceden todos los privilegios (crear tablas, insertar datos, etc.) pero únicamente sobre su propia base de datos. El .* indica todas las tablas dentro de esa base, no otras bases de datos.
-  sudo mariadb -e "GRANT ALL PRIVILEGES ON ${USER_NAME}.* TO '${USER_NAME}'@'localhost';" 
+Instalación rápida (Ubuntu):
 
-  sudo mariadb -e "FLUSH PRIVILEGES;"
+sudo apt update
+sudo apt install nginx mariadb-server php php-fpm openssl -y
+▶️ Uso
+Clona el repositorio o guarda el script:
+chmod +x script.sh
+Ejecuta el script:
+./script.sh
+El sistema mostrará:
+- Usuario creado: usuario01
+- Contraseña: xxxxxxxx
+- Carpeta: /home/usuario01
+- http://usuario01.com
+- Acceso al sitio
 
-}
-# Define una variable local con la ruta donde se va a crear el archivo de configuración de NGINX para el dominio del usuario
-Crear_config_nginx() {
-  local NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
-  sudo tee "$NGINX_CONF" > /dev/null <<EOF
-  # Usa tee con sudo para crear y escribir en el archivo de configuración como superusuario.
-🔹 > /dev/null oculta la salida en pantalla.
-🔹 <<EOF indica que lo que sigue es un bloque de texto que se insertará en el archivo.
+El script configura automáticamente un dominio local:
 
-server {
-    listen 80;
-    server_name ${DOMAIN};
+http://usuarioXX.com
 
-    root ${PUBLIC_HTML};
-    index index.php index.html;
+⚠️ Nota: Esto funciona dentro de la máquina o entorno donde se ejecuta (usa /etc/hosts).
 
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
+🗄️ Base de Datos
 
-    location ~ \.php\$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-    }
+Por cada usuario se crea:
 
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOF
-# Crea un enlace simbólico en sites-enabled para activar el sitio en NGINX.
-🔹 La opción -sf fuerza el enlace y sobreescribe si ya existe.
-  sudo ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
-}
-#  Verifica si el dominio ya está en /etc/hosts, esto solo tiene efecto local, útil si estás probando sin un DNS público.
-actualizar_hosts() {
-  if ! grep -q "${DOMAIN}" /etc/hosts; then
-    echo "127.0.0.1 ${DOMAIN}" | sudo tee -a /etc/hosts > /dev/null
-  fi
-}
+Base de datos: usuarioXX
+Usuario: usuarioXX
+Contraseña: (la misma generada)
 
-recargar_nginx() {
-  sudo systemctl reload nginx
-}
-# Recarga NGINX para aplicar los cambios
-}
+Acceso mediante:
+
+http://<IP>:8018/phpmyadmin
+🔐 Seguridad
+Usuarios con acceso SSH restringido (/usr/sbin/nologin)
+Se añade a DenyUsers en configuración SSH
+Permisos de directorio controlados (755)
+
+- Importante: Este script es para entornos controlados.
