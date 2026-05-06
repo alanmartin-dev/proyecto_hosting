@@ -1,4 +1,4 @@
-  Auto Provisionador de Usuarios Web (Bash + Nginx + MariaDB)
+-Auto Provisionador de Usuarios Web (Bash + Nginx + MariaDB)
 
 Este proyecto es un script en Bash que automatiza la creación de entornos web individuales por usuario en un servidor Linux.
 Está pensado para escenarios como hosting local, prácticas académicas o entornos de laboratorio.
